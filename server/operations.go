@@ -7,7 +7,7 @@ import (
 	"github.com/pkg/errors"
 )
 
-func (svr *Server) publish(ctx context.Context, conn net.Conn, topicName string, data []byte) error {
+func (svr *Server) publish(topicName string, data []byte) error {
 
 	topic_, ok := svr.topics[topicName]
 	if !ok {
@@ -23,7 +23,7 @@ func (svr *Server) publish(ctx context.Context, conn net.Conn, topicName string,
 	return nil
 }
 
-func (svr *Server) subscribe(ctx context.Context, conn net.Conn, topicName string, data []byte) error {
+func (svr *Server) subscribe(ctx context.Context, conn net.Conn, topicName string) error {
 
 	svr.mu.Lock()
 	topic_, ok := svr.topics[topicName]

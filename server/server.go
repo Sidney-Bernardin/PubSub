@@ -11,11 +11,9 @@ import (
 )
 
 const (
-	opCmdPublish   = "pub"
-	opCmdSubscribe = "sub"
+	operationPublish   = "pub"
+	operationSubscribe = "sub"
 )
-
-type operation func(ctx context.Context, conn net.Conn, topicName string, data []byte) error
 
 type topic struct {
 	subs int
@@ -25,22 +23,17 @@ type topic struct {
 type Server struct {
 	topics map[string]*topic
 
-	logger     *zerolog.Logger
-	operations map[string]operation
-	mu         *sync.Mutex
+	logger *zerolog.Logger
+	mu     *sync.Mutex
 }
 
 func NewServer(l *zerolog.Logger) *Server {
 
 	svr := &Server{
-		topics:     map[string]*topic{},
-		logger:     l,
-		operations: map[string]operation{},
-		mu:         &sync.Mutex{},
+		topics: map[string]*topic{},
+		logger: l,
+		mu:     &sync.Mutex{},
 	}
-
-	svr.operations[opCmdPublish] = svr.publish
-	svr.operations[opCmdSubscribe] = svr.subscribe
 
 	return svr
 }
@@ -65,27 +58,31 @@ func (svr *Server) Start(addr string) error {
 	}
 }
 
+func (svr *Server) readAndWait(conn net.Conn, cancel context.CancelFunc, msgChan chan []byte) {
+	defer cancel()
+
+	sent := false
+	buf := make([]byte, 2048)
+
+	for {
+		if _, err := conn.Read(buf); err != nil {
+			return
+		}
+
+		if !sent {
+			msgChan <- buf
+			sent = true
+		}
+	}
+}
+
 func (svr *Server) handleConn(conn net.Conn) {
-	defer func() {
-		conn.Close()
-	}()
+	defer conn.Close()
 
 	ctx, cancel := context.WithCancel(context.Background())
 	msgChan := make(chan []byte)
 
-	go func() {
-		defer cancel()
-
-		msg := make([]byte, 2048)
-
-		for {
-			if _, err := conn.Read(msg); err != nil {
-				return
-			}
-			msgChan <- msg
-			close(msgChan)
-		}
-	}()
+	go svr.readAndWait(conn, cancel, msgChan)
 
 	msg := <-msgChan
 
@@ -98,18 +95,21 @@ func (svr *Server) handleConn(conn net.Conn) {
 		return
 	}
 
-	op, ok := svr.operations[params[0]]
-	if !ok {
-		svr.writeErr(conn, problemDetail{
+	var err error
+
+	switch params[0] {
+	case operationPublish:
+		err = svr.publish(params[1], []byte(params[2]))
+	case operationSubscribe:
+		err = svr.subscribe(ctx, conn, params[1])
+	default:
+		err = problemDetail{
 			PDType: pdTypeInvalidOperation,
 			Detail: "Operation must be 'pub' or 'sub'.",
-		})
-		return
+		}
 	}
 
-	if err := op(ctx, conn, params[1], []byte(params[2])); err != nil {
+	if err != nil {
 		svr.writeErr(conn, errors.Wrapf(err, "cannot handle %s", params[0]))
 	}
-
-	return
 }
