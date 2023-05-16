@@ -9,14 +9,21 @@ import (
 
 func (svr *Server) publish(topicName string, data []byte) error {
 
+	svr.mu.RLock()
 	topic_, ok := svr.topics[topicName]
+	svr.mu.RUnlock()
+
 	if !ok {
 		return problemDetail{
 			PDType: pdTypeTopicDoesNotExist,
 		}
 	}
 
-	for i := 0; i < topic_.subs; i++ {
+	svr.mu.RLock()
+	subs := topic_.subs
+	svr.mu.RUnlock()
+
+	for i := 0; i < subs; i++ {
 		topic_.ch <- data
 	}
 
@@ -25,8 +32,11 @@ func (svr *Server) publish(topicName string, data []byte) error {
 
 func (svr *Server) subscribe(ctx context.Context, conn net.Conn, topicName string) error {
 
-	svr.mu.Lock()
+	svr.mu.RLock()
 	topic_, ok := svr.topics[topicName]
+	svr.mu.RUnlock()
+
+	svr.mu.Lock()
 	if !ok {
 		topic_ = &topic{0, make(chan []byte)}
 		svr.topics[topicName] = topic_
@@ -35,11 +45,11 @@ func (svr *Server) subscribe(ctx context.Context, conn net.Conn, topicName strin
 	svr.mu.Unlock()
 
 	defer func() {
+		svr.mu.Lock()
 		if topic_.subs = topic_.subs - 1; topic_.subs <= 0 {
-			svr.mu.Lock()
 			delete(svr.topics, topicName)
-			svr.mu.Unlock()
 		}
+		svr.mu.Unlock()
 	}()
 
 	for {

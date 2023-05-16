@@ -2,6 +2,7 @@ package server
 
 import (
 	"context"
+	"fmt"
 	"net"
 	"strings"
 	"sync"
@@ -21,10 +22,10 @@ type topic struct {
 }
 
 type Server struct {
-	topics map[string]*topic
-
 	logger *zerolog.Logger
-	mu     *sync.Mutex
+
+	mu     *sync.RWMutex
+	topics map[string]*topic
 }
 
 func NewServer(l *zerolog.Logger) *Server {
@@ -32,7 +33,7 @@ func NewServer(l *zerolog.Logger) *Server {
 	svr := &Server{
 		topics: map[string]*topic{},
 		logger: l,
-		mu:     &sync.Mutex{},
+		mu:     &sync.RWMutex{},
 	}
 
 	return svr
@@ -58,6 +59,60 @@ func (svr *Server) Start(addr string) error {
 	}
 }
 
+func (svr *Server) handleConn(conn net.Conn) {
+	defer conn.Close()
+
+	var (
+		err         error
+		ctx, cancel = context.WithCancel(context.Background())
+		msgChan     = make(chan []byte)
+	)
+
+	go svr.readAndWait(conn, cancel, msgChan)
+
+	msg := strings.TrimSpace(string(<-msgChan))
+	operation := strings.SplitN(msg, " ", 2)[0]
+
+	switch operation {
+
+	case operationPublish:
+
+		args := strings.SplitN(msg, " ", 3)
+
+		if len(args) != 3 {
+			err = problemDetail{
+				PDType: pdTypeInvalidCommand,
+				Detail: fmt.Sprintf("Operation '%s' requires a topic and data as arguments.", operationPublish),
+			}
+			break
+		}
+
+		err = svr.publish(args[1], []byte(args[2]))
+
+	case operationSubscribe:
+
+		args := strings.Split(msg, " ")
+
+		if len(args) < 2 {
+			err = problemDetail{
+				PDType: pdTypeInvalidCommand,
+				Detail: fmt.Sprintf("Operation '%s' requires a topic as an argument.", operationSubscribe),
+			}
+			break
+		}
+
+		err = svr.subscribe(ctx, conn, args[1])
+
+	default:
+		err = problemDetail{
+			PDType: pdTypeInvalidCommand,
+			Detail: "Operation must be 'pub' or 'sub'.",
+		}
+	}
+
+	svr.writeErr(conn, errors.Wrapf(err, "cannot handle operation '%s'", err))
+}
+
 func (svr *Server) readAndWait(conn net.Conn, cancel context.CancelFunc, msgChan chan []byte) {
 	defer cancel()
 
@@ -65,51 +120,14 @@ func (svr *Server) readAndWait(conn net.Conn, cancel context.CancelFunc, msgChan
 	buf := make([]byte, 2048)
 
 	for {
-		if _, err := conn.Read(buf); err != nil {
+		n, err := conn.Read(buf)
+		if err != nil {
 			return
 		}
 
 		if !sent {
-			msgChan <- buf
+			msgChan <- buf[:n]
 			sent = true
 		}
-	}
-}
-
-func (svr *Server) handleConn(conn net.Conn) {
-	defer conn.Close()
-
-	ctx, cancel := context.WithCancel(context.Background())
-	msgChan := make(chan []byte)
-
-	go svr.readAndWait(conn, cancel, msgChan)
-
-	msg := <-msgChan
-
-	params := strings.Split(string(msg), " ")
-	if len(params) != 3 {
-		svr.writeErr(conn, problemDetail{
-			PDType: pdTypeInvalidCommand,
-			Detail: "Command must look like this: [operation] [topic] [data].",
-		})
-		return
-	}
-
-	var err error
-
-	switch params[0] {
-	case operationPublish:
-		err = svr.publish(params[1], []byte(params[2]))
-	case operationSubscribe:
-		err = svr.subscribe(ctx, conn, params[1])
-	default:
-		err = problemDetail{
-			PDType: pdTypeInvalidOperation,
-			Detail: "Operation must be 'pub' or 'sub'.",
-		}
-	}
-
-	if err != nil {
-		svr.writeErr(conn, errors.Wrapf(err, "cannot handle %s", params[0]))
 	}
 }

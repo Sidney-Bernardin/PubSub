@@ -10,7 +10,6 @@ import (
 
 const (
 	pdTypeInvalidCommand    = "invalid_command"
-	pdTypeInvalidOperation  = "invalid_operation"
 	pdTypeTopicDoesNotExist = "topic_does_not_exist"
 )
 
@@ -26,6 +25,9 @@ func (pd problemDetail) Error() string {
 func (svr *Server) writeErr(conn net.Conn, e error) {
 
 	cause := errors.Cause(e)
+	if cause == nil {
+		return
+	}
 
 	if _, ok := cause.(problemDetail); !ok {
 		svr.logger.Error().Stack().Err(e).Msg("Internal Server Error")
