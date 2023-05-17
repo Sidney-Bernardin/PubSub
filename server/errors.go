@@ -14,8 +14,8 @@ const (
 )
 
 type problemDetail struct {
-	PDType string `json:"type"`
-	Detail string `json:"detail"`
+	PDType string `json:"type,omitempty"`
+	Detail string `json:"detail,omitempty"`
 }
 
 func (pd problemDetail) Error() string {
