@@ -23,7 +23,7 @@ func main() {
 	// Get the address from an environment variable.
 	addr, ok := os.LookupEnv("ADDR")
 	if !ok {
-		addr = "localhost:8080"
+		addr = "0.0.0.0:8080"
 	}
 
 	// Create a server.
