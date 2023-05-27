@@ -10,7 +10,7 @@ import (
 	"github.com/rs/zerolog/log"
 	"github.com/rs/zerolog/pkgerrors"
 
-	"pubsub/server"
+	"github.com/Sidney-Bernardin/PubSub/server"
 )
 
 func main() {
@@ -44,7 +44,7 @@ func main() {
 		}
 	}()
 
-	// Listen for interrupt/termination signals.
+	// Wait for interrupt/termination signals.
 	sig := <-signalChan
 
 	logger.Info().

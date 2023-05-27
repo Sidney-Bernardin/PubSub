@@ -16,8 +16,9 @@ const (
 )
 
 type topic struct {
-	subs int
-	ch   chan []byte
+	name      string
+	listeners int
+	msgChan   chan []byte
 }
 
 // Server uses TCP to implement a Pub/Sub messaging pattern.
@@ -64,16 +65,17 @@ func (svr *Server) Start(addr string) error {
 func (svr *Server) handleConn(conn net.Conn) {
 	defer conn.Close()
 
-	// Listen for incoming from the connection in another go-routine.
-	msgChan := make(chan string)
-	go svr.read(conn, msgChan)
+	// Read incoming messages from the connection in another go-routine.
+	connChan := make(chan string)
+	go svr.read(conn, connChan)
 
-	// Wait for a message.
-	msg, ok := <-msgChan
+	// Wait for a message from the connection, or for connChan to close.
+	msg, ok := <-connChan
 	if !ok {
 		return
 	}
 
+	// Compare the message's first argument.
 	switch strings.SplitN(msg, " ", 2)[0] {
 
 	case operationPublish:
@@ -99,22 +101,22 @@ func (svr *Server) handleConn(conn net.Conn) {
 
 	case operationSubscribe:
 
-		// Split the message into at least 2 sub-strings: operation, topic.
+		// Split the message into at least 2 sub-strings: operation and topics.
 		args := strings.Split(msg, " ")
 
 		// Check for missing arguments.
 		if len(args) < 2 {
 			svr.writeErr(conn, problemDetail{
 				PDType: pdTypeInvalidCommand,
-				Detail: fmt.Sprintf("Operation '%s' requires a topic as an argument.", operationSubscribe),
+				Detail: fmt.Sprintf("Operation '%s' requires at least one topic as an argument.", operationSubscribe),
 			})
 
 			return
 		}
 
-		// Subscribe to the topic.
-		if err := svr.subscribe(conn, msgChan, args[1]); err != nil {
-			svr.writeErr(conn, errors.Wrap(err, "cannot publish"))
+		// Subscribe to the topics.
+		if err := svr.subscribe(conn, connChan, args[1:]...); err != nil {
+			svr.writeErr(conn, errors.Wrap(err, "cannot subscribe"))
 			return
 		}
 
@@ -123,28 +125,5 @@ func (svr *Server) handleConn(conn net.Conn) {
 			PDType: pdTypeInvalidCommand,
 			Detail: "Operation must be 'pub' or 'sub'.",
 		})
-	}
-}
-
-// read sends any messages recived from the connection to msgChan. If the
-// connection can't be read from, msgChan closes and read returns.
-func (svr *Server) read(conn net.Conn, msgChan chan string) {
-	defer close(msgChan)
-
-	buf := make([]byte, 2048)
-
-	for {
-
-		// Listen for incoming messages from the connection.
-		n, err := conn.Read(buf)
-		if err != nil {
-			return
-		}
-
-		// If msgChan has space, send the message to it.
-		select {
-		case msgChan <- strings.TrimSpace(string(buf[:n])):
-		default:
-		}
 	}
 }

@@ -1,4 +1,4 @@
-module pubsub
+module github.com/Sidney-Bernardin/PubSub
 
 go 1.19
 

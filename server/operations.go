@@ -1,13 +1,14 @@
 package server
 
 import (
+	"context"
 	"net"
 
 	"github.com/pkg/errors"
 )
 
-// publish sends data to the specified topic's subscribers.
-func (svr *Server) publish(topicName string, data []byte) error {
+// publish sends the given message to the specified topic for each one of it's listeners.
+func (svr *Server) publish(topicName string, msg []byte) error {
 
 	// Get the topic.
 	svr.mu.RLock()
@@ -18,61 +19,64 @@ func (svr *Server) publish(topicName string, data []byte) error {
 		return problemDetail{pdTypeTopicDoesNotExist, ""}
 	}
 
-	// Get the topic's subscriber count.
-	svr.mu.RLock()
-	subs := topic_.subs
-	svr.mu.RUnlock()
-
-	// For each subscriber, send the data to the topic's channel.
-	for i := 0; i < subs; i++ {
-		topic_.ch <- data
+	// Send the message to the topic for each one of it's listeners.
+	svr.mu.Lock()
+	for i := 0; i < topic_.listeners; i++ {
+		topic_.msgChan <- msg
 	}
+	svr.mu.Unlock()
 
 	return nil
 }
 
-// subscribe listens for messages from the specified topic, then writes them to the connection.
-func (svr *Server) subscribe(conn net.Conn, msgChan chan string, topicName string) error {
+// subscribe asynchronously listens for messages from the specified topics, and
+// writes them to the connection.
+func (svr *Server) subscribe(conn net.Conn, connChan chan string, topicNames ...string) error {
 
-	// Get the topic.
-	svr.mu.RLock()
-	topic_, ok := svr.topics[topicName]
-	svr.mu.RUnlock()
+	var (
+		ctx, cancel = context.WithCancel(context.Background())
+		writeChan   = make(chan []byte)
+	)
 
-	// If the topic doesn't exist, create a new one.
-	svr.mu.Lock()
-	if !ok {
-		topic_ = &topic{0, make(chan []byte)}
-		svr.topics[topicName] = topic_
+	defer cancel()
+
+	// Get the topics and listen for their messages from seperate go-routines.
+	for i, topic_ := range svr.getTopics(topicNames...) {
+		go func(i int, topic_ *topic) {
+
+			// Add a listener to the topic and defer it's removal.
+			svr.addListener(topic_)
+			defer svr.removeListener(topic_)
+
+			for {
+				select {
+
+				// Return, when the context gets canceled.
+				case <-ctx.Done():
+					return
+
+				// Listen for and send the topic's messages to writeChan, to be
+				// written to the connection.
+				case msg := <-topic_.msgChan:
+					writeChan <- msg
+				}
+			}
+		}(i, topic_)
 	}
-	topic_.subs++
-	svr.mu.Unlock()
-
-	defer func() {
-
-		// Decrement the topic's subscriber count. If it gose below 1, delete the topic.
-		svr.mu.Lock()
-		if topic_.subs = topic_.subs - 1; topic_.subs <= 0 {
-			delete(svr.topics, topicName)
-		}
-		svr.mu.Unlock()
-	}()
 
 	for {
 		select {
 
-		// Listen for a close message from msgChan.
-		case _, ok := <-msgChan:
+		// Return, if connChan closes.
+		case _, ok := <-connChan:
 			if !ok {
 				return nil
 			}
 
-		// Listen for data from the topic.
-		case d := <-topic_.ch:
-
-			// Write the data to the connection.
-			if _, err := conn.Write(d); err != nil {
-				return errors.Wrap(err, "cannot write to connection")
+		// Write messages from writeChan to the connection.
+		case msg := <-writeChan:
+			if _, err := conn.Write(msg); err != nil {
+				return errors.Wrap(err, "cannot write to connection.")
 			}
 		}
 	}
