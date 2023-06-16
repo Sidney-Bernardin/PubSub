@@ -2,6 +2,7 @@ package server
 
 import (
 	"fmt"
+	"io"
 	"net"
 	"strings"
 	"sync"
@@ -65,23 +66,27 @@ func (svr *Server) Start(addr string) error {
 func (svr *Server) handleConn(conn net.Conn) {
 	defer conn.Close()
 
-	// Read incoming messages from the connection in another go-routine.
-	connChan := make(chan string)
-	go svr.read(conn, connChan)
+	// Read messages from the connection in another go-routine.
+	readChan := make(chan readResponse)
+	go svr.read(conn, readChan)
 
-	// Wait for a message from the connection, or for connChan to close.
-	msg, ok := <-connChan
-	if !ok {
+	// Wait for a message to be read from the connection.
+	res := <-readChan
+	if res.err != nil {
+		if res.err != io.EOF {
+			svr.writeErr(conn, errors.Wrap(res.err, "cannot read from connection"))
+		}
+
 		return
 	}
 
-	// Compare the message's first argument.
-	switch strings.SplitN(msg, " ", 2)[0] {
+	// Match the message's first argument to an operation.
+	switch strings.SplitN(res.msg, " ", 2)[0] {
 
 	case operationPublish:
 
 		// Split the message into 3 sub-strings: operation, topic, and data.
-		args := strings.SplitN(msg, " ", 3)
+		args := strings.SplitN(res.msg, " ", 3)
 
 		// Check for missing arguments.
 		if len(args) != 3 {
@@ -102,7 +107,7 @@ func (svr *Server) handleConn(conn net.Conn) {
 	case operationSubscribe:
 
 		// Split the message into at least 2 sub-strings: operation and topics.
-		args := strings.Split(msg, " ")
+		args := strings.Split(res.msg, " ")
 
 		// Check for missing arguments.
 		if len(args) < 2 {
@@ -115,7 +120,7 @@ func (svr *Server) handleConn(conn net.Conn) {
 		}
 
 		// Subscribe to the topics.
-		if err := svr.subscribe(conn, connChan, args[1:]...); err != nil {
+		if err := svr.subscribe(conn, readChan, args[1:]...); err != nil {
 			svr.writeErr(conn, errors.Wrap(err, "cannot subscribe"))
 			return
 		}

@@ -3,30 +3,9 @@ package server
 import (
 	"net"
 	"strings"
+
+	"github.com/pkg/errors"
 )
-
-// read sends any messages read from the connection to msgChan. If the
-// connection can't be read from, msgChan closes and read returns.
-func (svr *Server) read(conn net.Conn, msgChan chan string) {
-	defer close(msgChan)
-
-	buf := make([]byte, 2048)
-
-	for {
-
-		// Listen for incoming messages from the connection.
-		n, err := conn.Read(buf)
-		if err != nil {
-			return
-		}
-
-		// If msgChan has space, send the message to it.
-		select {
-		case msgChan <- strings.TrimSpace(string(buf[:n])):
-		default:
-		}
-	}
-}
 
 // getTopics returns the specified topics from the server and creates any that don't exist.
 func (svr *Server) getTopics(topicNames ...string) []*topic {
@@ -54,6 +33,38 @@ func (svr *Server) getTopics(topicNames ...string) []*topic {
 	}
 
 	return topics
+}
+
+type readResponse struct {
+	msg string
+	err error
+}
+
+// read sends messages from the connection to the read-channel. While the
+// read-channel is full, messages are ignored.
+func (svr *Server) read(conn net.Conn, readChan chan readResponse) {
+	buf := make([]byte, 2048)
+
+	for {
+
+		// Listen for messages from the connection.
+		n, err := conn.Read(buf)
+		if err != nil {
+			readChan <- readResponse{
+				err: errors.Wrap(err, "cannot read from connection"),
+			}
+
+			return
+		}
+
+		// If the read-channel has space, send the message to it.
+		select {
+		case readChan <- readResponse{
+			msg: strings.TrimSpace(string(buf[:n])),
+		}:
+		default:
+		}
+	}
 }
 
 // addListener increments the topic's listener count by one.
