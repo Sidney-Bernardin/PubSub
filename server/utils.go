@@ -40,8 +40,7 @@ type readResponse struct {
 	err error
 }
 
-// read sends messages from the connection to the read-channel. While the
-// read-channel is full, messages are ignored.
+// read sends messages from the connection to the read-channel.
 func (svr *Server) read(conn net.Conn, readChan chan readResponse) {
 	buf := make([]byte, 2048)
 
@@ -57,12 +56,9 @@ func (svr *Server) read(conn net.Conn, readChan chan readResponse) {
 			return
 		}
 
-		// If the read-channel has space, send the message to it.
-		select {
-		case readChan <- readResponse{
+		// Trim the message and send it to the read-channel.
+		readChan <- readResponse{
 			msg: strings.TrimSpace(string(buf[:n])),
-		}:
-		default:
 		}
 	}
 }

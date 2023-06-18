@@ -73,7 +73,7 @@ func (svr *Server) handleConn(conn net.Conn) {
 	// Wait for a message to be read from the connection.
 	res := <-readChan
 	if res.err != nil {
-		if res.err != io.EOF {
+		if !errors.Is(res.err, io.EOF) && !errors.Is(res.err, io.ErrClosedPipe) {
 			svr.writeErr(conn, errors.Wrap(res.err, "cannot read from connection"))
 		}
 
@@ -85,20 +85,20 @@ func (svr *Server) handleConn(conn net.Conn) {
 
 	case operationPublish:
 
-		// Split the message into 3 sub-strings: operation, topic, and data.
+		// Split the message into 3 sub-strings: operation, topic, and topic-message.
 		args := strings.SplitN(res.msg, " ", 3)
 
 		// Check for missing arguments.
 		if len(args) != 3 {
 			svr.writeErr(conn, problemDetail{
 				PDType: pdTypeInvalidCommand,
-				Detail: fmt.Sprintf("Operation '%s' requires a topic and data as arguments.", operationPublish),
+				Detail: fmt.Sprintf("Operation '%s' requires a topic and topic-message as arguments.", operationPublish),
 			})
 
 			return
 		}
 
-		// Publish the data to the topic.
+		// Publish the topic-message to the topic.
 		if err := svr.publish(args[1], []byte(args[2])); err != nil {
 			svr.writeErr(conn, errors.Wrap(err, "cannot publish"))
 			return

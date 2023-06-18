@@ -82,7 +82,7 @@ func (svr *Server) subscribe(conn net.Conn, readChan chan readResponse, topicNam
 				continue
 			}
 
-			if errors.Cause(res.err) == io.EOF {
+			if errors.Is(res.err, io.EOF) || errors.Is(res.err, io.ErrClosedPipe) {
 				return nil
 			}
 
