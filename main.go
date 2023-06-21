@@ -1,6 +1,7 @@
 package main
 
 import (
+	"flag"
 	"fmt"
 	"os"
 	"os/signal"
@@ -20,11 +21,9 @@ func main() {
 	logger := zerolog.New(os.Stdout)
 	logger = log.Output(zerolog.ConsoleWriter{Out: os.Stderr})
 
-	// Get the address from an environment variable.
-	addr, ok := os.LookupEnv("ADDR")
-	if !ok {
-		addr = "0.0.0.0:8080"
-	}
+	// Get the address flag.
+	addr := flag.String("addr", "0.0.0.0:8080", "An address for the Pub/Sub server to listen on.")
+	flag.Parse()
 
 	// Create a server.
 	svr := server.NewServer(&logger)
@@ -33,12 +32,12 @@ func main() {
 	signalChan := make(chan os.Signal, 1)
 	signal.Notify(signalChan, os.Interrupt, syscall.SIGTERM)
 
-	logger.Info().Msgf("Listening on %s...", addr)
+	logger.Info().Msgf("Listening on %s", *addr)
 
 	go func() {
 
 		// Start the server.
-		if err := svr.Start(addr); err != nil {
+		if err := svr.Start(*addr); err != nil {
 			logger.Error().Stack().Err(err).Msg("Server unexpectedly stopped")
 			return
 		}
