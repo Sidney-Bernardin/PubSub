@@ -20,7 +20,7 @@ cd PubSub
 ```
 Then run directly on your machine or with Docker.
 
-#### Run the Go program yourself.
+#### Run directly on your machine.
 ``` bash
 go run . -addr=0.0.0.0:8080
 ```
