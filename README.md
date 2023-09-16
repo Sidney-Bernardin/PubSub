@@ -11,21 +11,22 @@ For more on how this project works, visit my [portfolio](https://sidney-bernardi
 
 ## Usage
 
-### Running Locally
-Running PubSub locally on your machine is as simple as cloning this repository.
+### Install and run
 
+Clone this repository.
 ``` bash
 git clone https://github.com/Sidney-Bernardin/PubSub.git
 cd PubSub
 ```
+Then run on your machine or with Docker.
 
-Then running the Go program yourself.
-
+#### Run the Go program yourself.
 ``` bash
 go run . -addr=0.0.0.0:8080
 ```
 
-Or, run in a Docker container. You can use the [pre-built image](https://hub.docker.com/r/sidneybernardin/pubsub) that's based on the [Dockerfile](https://github.com/Sidney-Bernardin/PubSub/blob/main/Dockerfile) at the root of this repository.
+#### Run with Docker.
+You can use the [pre-built image](https://hub.docker.com/r/sidneybernardin/pubsub) that's based on the [Dockerfile](https://github.com/Sidney-Bernardin/PubSub/blob/main/Dockerfile) at the root of this repository.
 
 ``` bash
 docker run -p 8080:8080 sidneybernardin/pubsub:latest
