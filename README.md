@@ -18,7 +18,7 @@ Clone this repository.
 git clone https://github.com/Sidney-Bernardin/PubSub.git
 cd PubSub
 ```
-Then run on your machine or with Docker.
+Then run directly on your machine or with Docker.
 
 #### Run the Go program yourself.
 ``` bash
