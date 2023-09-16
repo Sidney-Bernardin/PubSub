@@ -7,7 +7,9 @@
 ## Overview
 PubSub is a TCP-based [Pub/Sub](https://en.wikipedia.org/wiki/Publish%E2%80%93subscribe_pattern) server. It lets clients create/listen to topics and data that is published to specific topics by other clients.
 
+<!--
 For more on how this project works, visit my [portfolio](https://sidney-bernardin.github.io/project/?id=pubsub).
+-->
 
 ## Usage
 
